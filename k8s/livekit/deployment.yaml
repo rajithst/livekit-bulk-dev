@@ -1,0 +1,183 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: livekit-system
+  labels:
+    name: livekit-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: livekit-config
+  namespace: livekit-system
+data:
+  livekit.yaml: |
+    port: 7880
+    bind_addresses:
+      - "0.0.0.0"
+    
+    rtc:
+      port_range_start: 50000
+      port_range_end: 60000
+      use_external_ip: true
+      tcp_port: 7881
+    
+    redis:
+      address: redis-headless.default.svc.cluster.local:6379
+    
+    logging:
+      level: info
+      sample: false
+    
+    room:
+      auto_create: true
+      empty_timeout: 300
+      max_participants: 100
+    
+    turn:
+      enabled: true
+      domain: livekit.voiceassistant.example.com
+      tls_port: 5349
+      udp_port: 443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit-server
+  namespace: livekit-system
+  labels:
+    app: livekit-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: livekit-server
+  template:
+    metadata:
+      labels:
+        app: livekit-server
+    spec:
+      nodeSelector:
+        agentpool: livekit
+      tolerations:
+      - key: livekit
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      containers:
+      - name: livekit
+        image: livekit/livekit-server:latest
+        ports:
+        - containerPort: 7880
+          name: http
+        - containerPort: 7881
+          name: rtc-tcp
+        - containerPort: 50000
+          protocol: UDP
+          name: rtc-udp-start
+        - containerPort: 60000
+          protocol: UDP
+          name: rtc-udp-end
+        env:
+        - name: LIVEKIT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: livekit-secrets
+              key: api-key
+        - name: LIVEKIT_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: livekit-secrets
+              key: api-secret
+        volumeMounts:
+        - name: config
+          mountPath: /etc/livekit.yaml
+          subPath: livekit.yaml
+        resources:
+          requests:
+            cpu: "2000m"
+            memory: "4Gi"
+          limits:
+            cpu: "4000m"
+            memory: "8Gi"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7880
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 7880
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: livekit-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: livekit-server
+  namespace: livekit-system
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: "rg-voiceassistant-prod-eastus"
+spec:
+  type: LoadBalancer
+  selector:
+    app: livekit-server
+  ports:
+  - name: http
+    port: 7880
+    targetPort: 7880
+    protocol: TCP
+  - name: rtc-tcp
+    port: 7881
+    targetPort: 7881
+    protocol: TCP
+  - name: turn-udp
+    port: 443
+    targetPort: 443
+    protocol: UDP
+  sessionAffinity: ClientIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: livekit-server-hpa
+  namespace: livekit-system
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: livekit-server
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60

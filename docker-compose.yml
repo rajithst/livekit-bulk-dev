@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: voice-assistant-db
+    environment:
+      POSTGRES_USER: voiceassistant
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: voiceassistant
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voiceassistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & State
+  redis:
+    image: redis:7-alpine
+    container_name: voice-assistant-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # LiveKit Server
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit-server
+    ports:
+      - "7880:7880"  # HTTP
+      - "7881:7881"  # WebRTC
+      - "7882:7882"  # TURN
+    environment:
+      - LIVEKIT_KEYS=devkey: devsecret
+    volumes:
+      - ./config/livekit.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7880"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: voice-assistant-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - DATABASE_URL=postgresql+asyncpg://voiceassistant:dev_password@postgres:5432/voiceassistant
+      - REDIS_URL=redis://redis:6379
+      - LIVEKIT_URL=http://livekit:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=devsecret
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+    restart: unless-stopped
+
+  # LiveKit Agent
+  agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent
+    container_name: voice-assistant-agent
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=devsecret
+      - BACKEND_API_URL=http://backend:8000
+      - BACKEND_API_KEY=dev-backend-key
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - STT_PROVIDER=openai
+      - LLM_PROVIDER=openai
+      - TTS_PROVIDER=openai
+      - LLM_MODEL=gpt-4
+      - TTS_VOICE=alloy
+    depends_on:
+      - livekit
+      - backend
+      - redis
+    volumes:
+      - ./agents:/app/agents
+    restart: unless-stopped
+    deploy:
+      replicas: 2  # Run 2 agent instances
+
+volumes:
+  postgres_data:
+  redis_data:
