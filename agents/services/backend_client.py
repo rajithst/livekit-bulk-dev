@@ -4,6 +4,7 @@ Backend API client for LiveKit agents to communicate with FastAPI backend.
 
 import logging
 from typing import Any, Dict, Optional
+from datetime import datetime
 import aiohttp
 
 from ..config.settings import Settings
@@ -94,10 +95,127 @@ class BackendClient:
         except Exception as e:
             logger.error(f"Error logging participant connected: {e}", exc_info=True)
 
+    def _get_timestamp(self) -> str:
+        """Get current timestamp in ISO format."""
+        return datetime.utcnow().isoformat()
+
     async def participant_disconnected(
         self,
         room_name: str,
-        participant_identity: str
+        participant_identity: str,
+        metadata: Dict[str, Any] = None
+    ) -> None:
+        """Notify backend that a participant disconnected."""
+        try:
+            session = await self._get_session()
+            async with session.post(
+                f"{self.backend_url}/api/v1/analytics/participant-disconnected",
+                json={
+                    "room_name": room_name,
+                    "participant_identity": participant_identity,
+                    "metadata": metadata,
+                    "timestamp": self._get_timestamp()
+                }
+            ) as response:
+                if response.status != 200:
+                    logger.warning(f"Failed to log participant disconnected: {response.status}")
+        except Exception as e:
+            logger.error(f"Error logging participant disconnected: {e}", exc_info=True)
+
+    async def store_transcription(
+        self,
+        conversation_id: str,
+        text: str,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """Store STT transcription and metadata."""
+        try:
+            session = await self._get_session()
+            async with session.post(
+                f"{self.backend_url}/api/v1/conversations/{conversation_id}/transcriptions",
+                json={
+                    "text": text,
+                    "metadata": {
+                        **metadata,
+                        "timestamp": self._get_timestamp()
+                    }
+                }
+            ) as response:
+                if response.status != 200:
+                    logger.error(
+                        f"Failed to store transcription: {await response.text()}",
+                        extra={"conversation_id": conversation_id}
+                    )
+        except Exception as e:
+            logger.error(
+                f"Error storing transcription: {str(e)}",
+                extra={"conversation_id": conversation_id},
+                exc_info=True
+            )
+
+    async def store_llm_response(
+        self,
+        conversation_id: str,
+        prompt: str,
+        response: str,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """Store LLM conversation turn and metadata."""
+        try:
+            session = await self._get_session()
+            async with session.post(
+                f"{self.backend_url}/api/v1/conversations/{conversation_id}/llm_turns",
+                json={
+                    "prompt": prompt,
+                    "response": response,
+                    "metadata": {
+                        **metadata,
+                        "timestamp": self._get_timestamp()
+                    }
+                }
+            ) as response:
+                if response.status != 200:
+                    logger.error(
+                        f"Failed to store LLM response: {await response.text()}",
+                        extra={"conversation_id": conversation_id}
+                    )
+        except Exception as e:
+            logger.error(
+                f"Error storing LLM response: {str(e)}",
+                extra={"conversation_id": conversation_id},
+                exc_info=True
+            )
+
+    async def store_tts_metadata(
+        self,
+        conversation_id: str,
+        text: str,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """Store TTS synthesis metadata."""
+        try:
+            session = await self._get_session()
+            async with session.post(
+                f"{self.backend_url}/api/v1/conversations/{conversation_id}/tts_events",
+                json={
+                    "text": text,
+                    "metadata": {
+                        **metadata,
+                        "timestamp": self._get_timestamp()
+                    }
+                }
+            ) as response:
+                if response.status != 200:
+                    logger.error(
+                        f"Failed to store TTS metadata: {await response.text()}",
+                        extra={"conversation_id": conversation_id}
+                    )
+        except Exception as e:
+            logger.error(
+                f"Error storing TTS metadata: {str(e)}",
+                extra={"conversation_id": conversation_id},
+                exc_info=True
+            )
     ) -> None:
         """
         Notify backend that a participant disconnected.
@@ -116,6 +234,101 @@ class BackendClient:
                     logger.warning(f"Failed to log participant disconnected: {response.status}")
         except Exception as e:
             logger.error(f"Error logging participant disconnected: {e}", exc_info=True)
+
+    async def store_transcription(
+        self,
+        conversation_id: str,
+        text: str,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """Store STT transcription and metadata."""
+        try:
+            session = await self._get_session()
+            async with session.post(
+                f"{self.backend_url}/api/v1/conversations/{conversation_id}/transcriptions",
+                json={
+                    "text": text,
+                    "metadata": {
+                        **metadata,
+                        "timestamp": self._get_timestamp()
+                    }
+                }
+            ) as response:
+                if response.status != 200:
+                    logger.error(
+                        f"Failed to store transcription: {await response.text()}",
+                        extra={"conversation_id": conversation_id}
+                    )
+        except Exception as e:
+            logger.error(
+                f"Error storing transcription: {str(e)}",
+                extra={"conversation_id": conversation_id},
+                exc_info=True
+            )
+
+    async def store_llm_response(
+        self,
+        conversation_id: str,
+        prompt: str,
+        response: str,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """Store LLM conversation turn and metadata."""
+        try:
+            session = await self._get_session()
+            async with session.post(
+                f"{self.backend_url}/api/v1/conversations/{conversation_id}/llm_turns",
+                json={
+                    "prompt": prompt,
+                    "response": response,
+                    "metadata": {
+                        **metadata,
+                        "timestamp": self._get_timestamp()
+                    }
+                }
+            ) as response:
+                if response.status != 200:
+                    logger.error(
+                        f"Failed to store LLM response: {await response.text()}",
+                        extra={"conversation_id": conversation_id}
+                    )
+        except Exception as e:
+            logger.error(
+                f"Error storing LLM response: {str(e)}",
+                extra={"conversation_id": conversation_id},
+                exc_info=True
+            )
+
+    async def store_tts_metadata(
+        self,
+        conversation_id: str,
+        text: str,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """Store TTS synthesis metadata."""
+        try:
+            session = await self._get_session()
+            async with session.post(
+                f"{self.backend_url}/api/v1/conversations/{conversation_id}/tts_events",
+                json={
+                    "text": text,
+                    "metadata": {
+                        **metadata,
+                        "timestamp": self._get_timestamp()
+                    }
+                }
+            ) as response:
+                if response.status != 200:
+                    logger.error(
+                        f"Failed to store TTS metadata: {await response.text()}",
+                        extra={"conversation_id": conversation_id}
+                    )
+        except Exception as e:
+            logger.error(
+                f"Error storing TTS metadata: {str(e)}",
+                extra={"conversation_id": conversation_id},
+                exc_info=True
+            )
 
     async def save_conversation_turn(
         self,
@@ -303,11 +516,6 @@ class BackendClient:
                     logger.error(f"Failed to save session: {response.status}")
         except Exception as e:
             logger.error(f"Error saving session: {e}", exc_info=True)
-
-    def _get_timestamp(self) -> str:
-        """Get current timestamp in ISO format."""
-        from datetime import datetime
-        return datetime.utcnow().isoformat()
 
     async def cleanup(self):
         """Close HTTP session."""

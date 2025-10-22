@@ -32,6 +32,24 @@ class STTConfig:
     custom_vocabulary: Optional[List[str]] = None
     metadata: Dict[str, Any] = None
 
+    @classmethod
+    def create(cls, provider: ProviderType, **kwargs) -> 'STTConfig':
+        """Create config with overrideable parameters."""
+        # Start with default values
+        config_dict = {
+            "provider": provider,
+            "language": "en-US",
+            "model": None,
+            "sample_rate": 16000,
+            "enable_interim_results": True,
+            "profanity_filter": False,
+            "custom_vocabulary": None,
+            "metadata": {}
+        }
+        # Update with provided overrides
+        config_dict.update(kwargs)
+        return cls(**config_dict)
+
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
@@ -51,6 +69,26 @@ class LLMConfig:
     streaming: bool = True
     metadata: Dict[str, Any] = None
 
+    @classmethod
+    def create(cls, provider: ProviderType, model: str, **kwargs) -> 'LLMConfig':
+        """Create config with overrideable parameters."""
+        # Start with default values
+        config_dict = {
+            "provider": provider,
+            "model": model,
+            "temperature": 0.7,
+            "max_tokens": 150,
+            "top_p": 1.0,
+            "frequency_penalty": 0.0,
+            "presence_penalty": 0.0,
+            "system_prompt": None,
+            "streaming": True,
+            "metadata": {}
+        }
+        # Update with provided overrides
+        config_dict.update(kwargs)
+        return cls(**config_dict)
+
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
@@ -67,6 +105,24 @@ class TTSConfig:
     sample_rate: int = 24000
     audio_encoding: str = "pcm"
     metadata: Dict[str, Any] = None
+
+    @classmethod
+    def create(cls, provider: ProviderType, voice: str, **kwargs) -> 'TTSConfig':
+        """Create config with overrideable parameters."""
+        # Start with default values
+        config_dict = {
+            "provider": provider,
+            "voice": voice,
+            "model": None,
+            "speed": 1.0,
+            "pitch": 1.0,
+            "sample_rate": 24000,
+            "audio_encoding": "pcm",
+            "metadata": {}
+        }
+        # Update with provided overrides
+        config_dict.update(kwargs)
+        return cls(**config_dict)
 
     def __post_init__(self):
         if self.metadata is None:
