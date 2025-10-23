@@ -1,0 +1,86 @@
+.voice-assistant {
+  background: #2d2d2d;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.voice-assistant h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  color: #fff;
+}
+
+.assistant-status {
+  margin-bottom: 1.5rem;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #1a1a1a;
+  border-radius: 6px;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #666;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.status-indicator.listening .status-dot {
+  background: #00ff00;
+}
+
+.status-indicator.thinking .status-dot {
+  background: #ffaa00;
+}
+
+.status-indicator.speaking .status-dot {
+  background: #0066ff;
+}
+
+.status-indicator.idle .status-dot {
+  background: #666;
+  animation: none;
+}
+
+.status-text {
+  color: #fff;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.audio-visualizer {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: #1a1a1a;
+  border-radius: 6px;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.assistant-info {
+  margin-top: 1rem;
+}
+
+.info-text {
+  margin: 0;
+  color: #aaa;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

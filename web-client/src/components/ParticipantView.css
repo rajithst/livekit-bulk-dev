@@ -1,0 +1,23 @@
+.participant-view {
+  background: #2d2d2d;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.participant-view h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  color: #fff;
+}
+
+.participant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.participant-grid > * {
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+}
