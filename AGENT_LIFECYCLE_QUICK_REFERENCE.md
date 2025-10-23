@@ -5,9 +5,9 @@
 🏠 ONE ROOM = ONE AGENT PROCESS
 ```
 
-## Visual Summary
-
-### What It Is ✅
+## Visual Summary is
+ 
+### What It Is ✅ 
 ```
 ┌─────────────────────────────────┐
 │  Room: "customer-support-123"   │
