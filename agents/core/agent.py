@@ -1,14 +1,16 @@
 """
-LiveKit Agent with pluggable AI providers using LiveKit's native event system and state management.
+LiveKit Agent with pluggable AI providers using LiveKit's native event system.
+
+This agent uses LiveKit's plugin system to handle all audio streaming, STT/LLM/TTS processing.
+No manual audio buffering or chunk management is required - LiveKit handles it all automatically.
 """
 
 import asyncio
 import logging
 import json
 from datetime import datetime
-from typing import Optional, Dict, Any, List, AsyncIterable
+from typing import Optional, Dict, Any, List
 
-from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -16,20 +18,15 @@ from livekit.agents import (
     JobContext, 
     WorkerOptions, 
     cli,
-    JobProcess,
-    JobRequest,
     RoomInputOptions,
-    ModelSettings,
-    FunctionTool,
     UserInputTranscribedEvent,
     ConversationItemAddedEvent,
     SpeechCreatedEvent,
     AgentStateChangedEvent,
     UserStateChangedEvent,
-    ErrorEvent,
-    VADEventTypes
+    ErrorEvent
 )
-from livekit.agents import llm, stt
+from livekit.agents import llm
 
 from opentelemetry import metrics
 from opentelemetry.sdk.metrics import MeterProvider
@@ -192,11 +189,18 @@ class VoiceAssistantAgent(Agent):
         super().__init__(instructions=instructions)
         self.settings = settings
         self.backend_client = backend_client
+        
+        # Store configs for observability/metrics only
+        # These are NOT used to create plugins - plugins are created in entrypoint()
+        # and passed to AgentSession. We keep configs here to:
+        # 1. Populate metrics attributes (provider/model info)
+        # 2. Log metadata to backend (track what models were used)
+        # 3. Enable debugging (know exact configuration for this session)
         self.stt_config = stt_config
         self.llm_config = llm_config
         self.tts_config = tts_config
         
-        # Initialize metrics
+        # Initialize metrics (uses config info for attributes)
         self._setup_metrics()
         
         # Session state
@@ -210,30 +214,11 @@ class VoiceAssistantAgent(Agent):
         self.total_llm_latency = 0.0
         self.total_tts_latency = 0.0
         self.request_count = 0
-        
-        # Providers will be initialized in on_session_start
-        self.stt_provider = None
-        self.llm_provider = None 
-        self.tts_provider = None
-        self._audio_source: Optional[rtc.AudioSource] = None
 
     async def on_enter(self) -> None:
         """Called when the agent becomes active in a session."""
         logger.info("Agent becoming active in session")
         
-        # Initialize providers if configs provided, otherwise use session defaults
-        if self.stt_config:
-            self.stt_provider = ProviderFactory.create_stt_provider(self.stt_config)
-            await self.stt_provider.initialize()
-        
-        if self.llm_config:
-            self.llm_provider = ProviderFactory.create_llm_provider(self.llm_config)
-            await self.llm_provider.initialize()
-            
-        if self.tts_config:
-            self.tts_provider = ProviderFactory.create_tts_provider(self.tts_config)
-            await self.tts_provider.initialize()
-            
         # Set up LiveKit event handlers in the session
         self.session.on("user_input_transcribed", self._handle_transcription)
         self.session.on("conversation_item_added", self._handle_conversation_item)
@@ -488,83 +473,6 @@ class VoiceAssistantAgent(Agent):
                     stack_trace=getattr(event.error, "stack_trace", None)
                 )
 
-    async def stt_node(
-        self,
-        audio: AsyncIterable[rtc.AudioFrame],
-        model_settings: ModelSettings
-    ) -> AsyncIterable[stt.SpeechEvent]:
-        """
-        Transcribes audio frames into speech events.
-        Storage of transcriptions is handled by the user_input_transcribed event.
-        """
-        if self.stt_provider:
-            # Use our custom STT provider
-            async def process_audio():
-                async for frame in audio:
-                    # Process audio frames with custom provider
-                    processed_frame = await self.stt_provider.preprocess_audio(frame)
-                    yield processed_frame
-            
-            # Return speech events from our provider
-            return await self.stt_provider.transcribe_stream(process_audio())
-            
-        # Fallback to default LiveKit STT if no custom provider
-        return await Agent.default.stt_node(self, audio, model_settings)
-
-    async def llm_node(
-        self,
-        chat_ctx: llm.ChatContext,
-        tools: list[FunctionTool],
-        model_settings: ModelSettings
-    ) -> AsyncIterable[llm.ChatChunk]:
-        """
-        Performs inference based on the chat context and creates the agent's response.
-        The LLM responses are now handled by the conversation_item_added event.
-        """
-        if self.llm_provider:
-            # Use our custom LLM provider
-            return self.llm_provider.generate_response(chat_ctx.messages, tools)
-            
-        # Fallback to default LiveKit LLM
-        return await Agent.default.llm_node(self, chat_ctx, tools, model_settings)
-
-    async def tts_node(
-        self,
-        text: AsyncIterable[str],
-        model_settings: ModelSettings
-    ) -> AsyncIterable[rtc.AudioFrame]:
-        """
-        Synthesizes audio from text segments.
-        TTS metadata is now handled by the speech_created event.
-        """
-        # Collect text chunks
-        text_chunks = []
-        async for chunk in text:
-            text_chunks.append(chunk)
-        complete_text = ''.join(text_chunks)
-
-        if self.tts_provider:
-            # Use our custom TTS provider
-            return self.tts_provider.synthesize_speech(complete_text)
-
-        # Fallback to default LiveKit TTS
-        return await Agent.default.tts_node(self, text, model_settings)
-
-    async def transcription_node(
-        self,
-        text: AsyncIterable[str],
-        model_settings: ModelSettings
-    ) -> AsyncIterable[str]:
-        """
-        Process transcriptions before they're sent to the user.
-        We can clean up formatting, fix punctuation, etc.
-        """
-        async for delta in text:
-            # Clean up transcription if needed
-            cleaned_text = delta.strip()
-            if cleaned_text:
-                yield cleaned_text
-
     async def cleanup(self):
         """Clean up resources and save final session state."""
         logger.info("Cleaning up voice assistant agent")
@@ -575,14 +483,6 @@ class VoiceAssistantAgent(Agent):
                 conversation_id=self.conversation_id,
                 messages=self.conversation_history
             )
-        
-        # Clean up providers
-        if self.stt_provider:
-            await self.stt_provider.cleanup()
-        if self.llm_provider:
-            await self.llm_provider.cleanup()
-        if self.tts_provider:
-            await self.tts_provider.cleanup()
         
         # Clean up backend client
         if self.backend_client:
@@ -656,10 +556,17 @@ async def entrypoint(ctx: JobContext):
     agent = VoiceAssistantAgent(
         settings=settings,
         backend_client=backend_client,
-        stt_config=stt_config,
-        llm_config=llm_config,
-        tts_config=tts_config
+        stt_config=stt_config,  # Passed for metrics/observability only
+        llm_config=llm_config,  # Passed for metrics/observability only
+        tts_config=tts_config   # Passed for metrics/observability only
     )
+    
+    # Create LiveKit plugin instances from configs
+    # These are the actual plugins that AgentSession uses for STT/LLM/TTS processing
+    # LiveKit handles all audio streaming, buffering, and processing automatically
+    stt_plugin = ProviderFactory.create_stt(stt_config)
+    llm_plugin = ProviderFactory.create_llm(llm_config)
+    tts_plugin = ProviderFactory.create_tts(tts_config)
     
     # Register shutdown hook for cleanup
     async def cleanup_hook():
@@ -692,11 +599,12 @@ async def entrypoint(ctx: JobContext):
             }
         )
         
-        # Start agent session
+        # Start agent session with LiveKit plugins
+        # LiveKit handles all audio streaming, buffering, and processing
         session = AgentSession(
-            stt=settings.stt_model,
-            llm=settings.llm_model,
-            tts=settings.tts_model
+            stt=stt_plugin,
+            llm=llm_plugin,
+            tts=tts_plugin
         )
         
         await session.start(

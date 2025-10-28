@@ -1,40 +1,34 @@
 """
 Provider registry - automatically registers all available providers.
+
+Each provider factory function returns a LiveKit plugin instance or adapter that can be
+passed directly to AgentSession. LiveKit handles all audio streaming and buffering.
+
+Supports both native LiveKit plugins and custom HTTP/WebSocket endpoints.
 """
 
 from .base import ProviderFactory, ProviderType
-
-# Import all provider implementations
-from .stt.openai_stt import OpenAISTTProvider
-from .stt.azure_stt import AzureSTTProvider
-from .llm.openai_llm import OpenAILLMProvider
-from .tts.openai_tts import OpenAITTSProvider
+from .openai_provider import OpenAIProviderFactory
+from .azure_provider import AzureProviderFactory
+from .custom_provider import CustomProviderFactory
 
 
 def register_all_providers():
     """Register all available providers with the factory."""
     
-    # Register STT providers
-    ProviderFactory.register_stt_provider(
-        ProviderType.OPENAI,
-        OpenAISTTProvider
-    )
-    ProviderFactory.register_stt_provider(
-        ProviderType.AZURE,
-        AzureSTTProvider
-    )
+    # Register OpenAI providers (using class methods)
+    ProviderFactory.register_stt_provider(ProviderType.OPENAI, OpenAIProviderFactory.create_stt)
+    ProviderFactory.register_llm_provider(ProviderType.OPENAI, OpenAIProviderFactory.create_llm)
+    ProviderFactory.register_tts_provider(ProviderType.OPENAI, OpenAIProviderFactory.create_tts)
     
-    # Register LLM providers
-    ProviderFactory.register_llm_provider(
-        ProviderType.OPENAI,
-        OpenAILLMProvider
-    )
+    # Register Azure OpenAI providers (using class methods)
+    ProviderFactory.register_stt_provider(ProviderType.AZURE, AzureProviderFactory.create_stt)
+    ProviderFactory.register_llm_provider(ProviderType.AZURE, AzureProviderFactory.create_llm)
+    ProviderFactory.register_tts_provider(ProviderType.AZURE, AzureProviderFactory.create_tts)
     
-    # Register TTS providers
-    ProviderFactory.register_tts_provider(
-        ProviderType.OPENAI,
-        OpenAITTSProvider
-    )
+    # Register custom HTTP/WebSocket providers
+    ProviderFactory.register_stt_provider(ProviderType.CUSTOM_HTTP, CustomProviderFactory.create_http_stt)
+    ProviderFactory.register_stt_provider(ProviderType.CUSTOM_WS, CustomProviderFactory.create_websocket_stt)
 
 
 # Auto-register on import
@@ -44,5 +38,8 @@ register_all_providers()
 __all__ = [
     'ProviderFactory',
     'ProviderType',
+    'OpenAIProviderFactory',
+    'AzureProviderFactory',
+    'CustomProviderFactory',
     'register_all_providers'
 ]
